@@ -1,0 +1,238 @@
+#!/usr/bin/python -B
+
+"""
+ASRTrain
+
+Command-prompt based application for managing and exploring ASR models.
+
+Copyright (c) 2014 All Right Reserved, Liam Wickins
+
+Please see the LICENSE file for more information.
+
+THIS CODE AND INFORMATION ARE PROVIDED "AS IS" WITHOUT WARRANTY OF ANY 
+KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
+IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
+PARTICULAR PURPOSE.
+"""
+
+import readline
+from optparse import OptionParser
+from ASRModel import *
+from ASR import ASR
+
+parser = OptionParser()
+parser.add_option("-f", "--file", dest="file", help="Input command file to run",
+                  action="store", type="string")
+parser.add_option("-s", "--session", dest="session", help="Session name",
+                  action="store", type="string")
+parser.add_option("-m", "--model", dest="model", help="Model name",
+                  action="store", type="string")
+(options, args) = parser.parse_args()
+
+if (options.session is None):
+  print "You must specify a session name"
+  exit()
+
+if (options.model is None):
+  print "Will be using default model for this session"
+
+# Build speech model
+t = ASRModel(options.session, model=options.model)
+
+# Decode that speech to text
+asr = None
+
+# ASR
+def AsrCallback(event, text, uttid):
+  if (event == 'result'):
+    print "<"+text+">"
+
+def help(args):
+  for i in cmdTable.keys():
+    print i, ":", cmdTable[i]['help']
+
+def quit(args):
+  print "User has aborted session."
+  exit()
+
+def info(args):
+  t.LoadTraining()
+  print "SESSION:", t.name
+  print "HMM    :", t.model
+  print "DICT   :", t.dict
+  print "LM     :", t.lm
+  print "ENTRIES:", len(t.data.keys())
+
+def update(args):
+  t.UpdateTraining()
+  print "Training update"
+
+def build(args):
+  if (len(args) > 0):
+    t.BuildModel(args[0])
+  else:
+    t.BuildModel()
+  print "Created new model", t.model
+
+def load(args):
+  global t
+  t = ASRModel(options.session, model=args[0])
+  t.LoadTraining()
+  print "Model", args[0], "loaded"
+
+def data(args):
+  for i in t.data.keys():
+    print i,":", t.data[i]['sent']
+
+def rec(args):
+  sent = ' '.join(args)
+  print "Say:", sent
+  info = t.AddUtterance(sent)
+  print "Added:", sent, ":", info
+  t.LoadTraining()
+
+def srec(args):
+  sent = ' '.join(args)
+  print "Say:", sent
+  info = t.AutoAddUtterance(sent)
+  print "Added:", sent, ":", info
+  t.LoadTraining()
+
+def sreccorpus(args):
+  f = args[0]
+  info = t.AutoAddCorpus(f)
+  print "Added:", f, ":", len(info), "items"
+  t.LoadTraining()
+
+def add(args):
+  sent = ' '.join(args)
+  info = t.AddSentence(sent)
+  print "Added:", sent, ":", info
+  t.LoadTraining()
+
+def addcorpus(args):
+  f = args[0]
+  info = t.AddCorpus(f)
+  print "Added:", f, ":", len(info), "items"
+  t.LoadTraining()
+
+def test(args):
+  print t.TestModel()
+
+def go(args):
+  global asr
+  if (asr is None):
+      asr = ASR(AsrCallback, hmm=t.model, lm=t.lm, dic=t.dict)
+      asr.Play()
+      print "ASR is now playing"
+  else:
+    if (asr.IsPlaying()):
+      print "ASR already playing"
+    else:
+      asr.Pause()
+      print "ASR is paused"
+
+def stop(args):
+  global asr
+  if (asr is None):
+    print "ASR is already stopped"
+  else:
+    asr.Pause()
+    asr = None
+    print "ASR is stopped"
+
+
+def ls(args):
+  for i in t.ListModels():
+    print i
+  print "Finished listing models"
+
+def rm(args):
+  if (args[0] == '*'):
+    args = [''] + t.data.keys()
+  for id in args:
+    if (t.DeleteEntry(id)):
+      print "Successfully deleted", id, "- don't forget to run update"
+    else:
+      print "Could not delete", id
+  t.UpdateTraining()
+
+def rmm(args):
+
+  if (len(args) == 0):
+    print "Must provide a model name"
+    return
+
+  if (args[0] == '*'):
+    args = t.ListModels()
+
+  for id in args: 
+    if (t.DeleteModel(id)):
+      print "Successfully deleted", id
+    else:
+      print "Could not delete", id
+
+def play(args):
+
+  if (args[0] == '*'):
+    args = [''] + t.data.keys()
+
+  for id in args:
+    if (t.PlayEntry(id)):
+      print "Successfully played", id
+    else:
+      print "Entry", id, "has no wave file"
+
+def find(args):
+
+  regexp = ' '.join(args)
+  res = t.Find(regexp)
+  for i in res:
+    print i,":", t.data[i]['sent']
+
+cmdTable = {
+ 'help': { 'func':help, 'help': "Displays help information on commands" },
+ 'quit': { 'func':quit, 'help': "Exits the program" },
+ 'exit': { 'func':quit, 'help': "Exits the program" },
+ 'info': { 'func':info, 'help': "Display information about current session" },
+ 'update': { 'func':update, 'help': "Update training information" },
+ 'build': { 'func':build, 'help': "Build the model" },
+ 'load': { 'func':load, 'help': "Load a new mdoel" },
+ 'data': { 'func':data, 'help': "Load and display training data" },
+ 'rec': { 'func':rec, 'help': "Record new utterance" },
+ 'srec': { 'func':srec, 'help': "Automatic synth-record a new utterance" },
+ 'sreccorpus': { 'func':sreccorpus, 'help': "Automatic synth-record a corpus" },
+ 'add': { 'func':add, 'help': "Add new sentence" },
+ 'addcorpus': { 'func':addcorpus, 'help': "Add corpus of sentences" },
+ 'test': { 'func':test, 'help': "Test the current model with prepared data" },
+ 'go': { 'func':go, 'help': "Play or pause ASR instance (toggle)" },
+ 'stop': { 'func':stop, 'help': "Stop ASR instance" },
+ 'play': { 'func':play, 'help': "Play utterance entry" },
+ 'find': { 'func':find, 'help': "Find entries using regexp" },
+ 'ls': { 'func':ls, 'help': "List available models" },
+ 'rm': { 'func':rm, 'help': "Delete entry from training database" },
+ 'rmm': { 'func':rmm, 'help': "Delete model directory" }
+}
+
+def InvokeCommand(text):
+  if (text != ""):
+    args = text.split(' ')
+    cmd = args[0]
+    if len(args) > 1:
+      args = args[1:]
+    else:
+      args = []
+    if cmd in cmdTable.keys():
+      cmdTable[cmd]['func'](args)
+
+if (not options.file):
+
+  while True:
+    text = raw_input("CMD> ")
+    InvokeCommand(text)
+
+else:
+
+  with open(options.file, 'r') as fp:
+    for text in fp:
+      InvokeCommand(text.strip())
