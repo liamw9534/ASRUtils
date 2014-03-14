@@ -17,8 +17,6 @@ PARTICULAR PURPOSE.
 
 import readline
 from optparse import OptionParser
-from ASRModel import *
-from ASR import ASR
 
 parser = OptionParser()
 parser.add_option("-f", "--file", dest="file", help="Input command file to run",
@@ -28,6 +26,9 @@ parser.add_option("-s", "--session", dest="session", help="Session name",
 parser.add_option("-m", "--model", dest="model", help="Model name",
                   action="store", type="string")
 (options, args) = parser.parse_args()
+
+from ASRModel import *
+from ASR import ASR
 
 if (options.session is None):
   print "You must specify a session name"

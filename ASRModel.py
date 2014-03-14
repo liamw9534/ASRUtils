@@ -21,7 +21,7 @@ from SpeechRecord import *
 
 class ASRModel:
 
-  LOCALMODELS = "/ASRModels/"
+  MODELS = "ASRMODELS"
   VOICES = "/usr/share/mbrola/voices/"
   SPHINXTRAIN = "/usr/local/lib/sphinxtrain/"
   SPHINXLIBEXEC = "/usr/local/libexec/sphinxtrain/"
@@ -48,17 +48,19 @@ class ASRModel:
   def __init__(self, name, model=None):
 
     self.name = name
-    self.__mkdir(name)
-    self.__mkdir(name+self.TRAINING)
-    self.__mkdir(name+self.OUTPUT)
-    self.__mkdir(name+self.MODEL)
     self.cwd = os.getcwd()
-    self.root = self.cwd + "/" + self.name
+    self.models = os.getenv(self.MODELS)
+    if (self.models[-1] != '/'): self.models += '/'
+    self.root = self.models + self.name
     self.training = self.root + self.TRAINING
     self.fileids = self.training + self.name + self.FILEIDS
     self.corpus = self.training + self.name + self.CORPUS
     self.trans = self.training + self.name + self.TRAN
     self.output  = self.root + self.OUTPUT
+    self.__mkdir(self.root)
+    self.__mkdir(self.training)
+    self.__mkdir(self.output)
+    self.__mkdir(self.root+self.MODEL)
     self.logfile = open(self.output + self.DEBUGFILE, 'w')
     # If no model is given, create a default HMM model
     if (model is None):
@@ -104,7 +106,7 @@ class ASRModel:
   def __CreateHmmModelFromTarball(self):
   
     model = "hub4wsj_sc_8k"
-    tarball = self.cwd + self.LOCALMODELS + model + self.TGZ
+    tarball = self.models + model + self.TGZ
     cmd = [ 'tar', '-zxvf', tarball ]
     last = self.__chdir(self.root + self.MODEL)
     self.__RunCmd(cmd, debug=True)
