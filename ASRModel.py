@@ -16,7 +16,7 @@ KIND, EITHER EXPRESSED OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE
 IMPLIED WARRANTIES OF MERCHANTABILITY AND/OR FITNESS FOR A
 PARTICULAR PURPOSE.
 """
-import os, errno, shutil, uuid, subprocess, re
+import os, errno, shutil, uuid, subprocess, re, glob
 from SpeechRecord import *
 
 class ASRModel:
@@ -68,8 +68,8 @@ class ASRModel:
     self.model = self.root + self.MODEL + model + "/"
     self.dict = self.model + self.name + self.DICT
     self.lm = self.model + self.name + self.LM
-    # Load training data
-    self.LoadTraining()
+    # Load all IDs from training data
+    self.GetAllIds()
 
   def __chdir(self, path):
     try:
@@ -120,23 +120,26 @@ class ASRModel:
 
   def PlayEntry(self, id):
 
-    if id in self.data.keys():
-      f = self.training + id + self.WAV
-      if (os.path.exists(f)):
-        # This relies on 'sox' being installed on local machine
-        # FIXME: use pyaudio to play this instead
-        cmd = [ 'play', f ]
-        self.__RunCmd(cmd, debug=True)
-        return True
+    f = self.training + id + self.WAV
+    if (os.path.exists(f)):
+      # This relies on 'sox' being installed on local machine
+      # FIXME: use pyaudio to play this instead
+      cmd = [ 'play', f ]
+      self.__RunCmd(cmd, debug=True)
+      return True
     return False
 
   def Find(self, regexp):
 
+    k = 0
     hits = []
-    for i in self.data.keys():
-      res = re.findall(regexp, self.data[i]['sent'])
-      if (res):
-        hits.append(i)
+    with open(self.corpus, 'r') as f:
+      for line in f:
+        res = re.findall(regexp, line)
+        if (res):
+          id = self.__GetIdFromFile(self.textFiles[k])
+          hits.append((id, line.strip()))
+        k += 1
     return hits
 
   def DeleteModel(self, id):
@@ -151,10 +154,9 @@ class ASRModel:
 
   def DeleteEntry(self, id):
 
-    if id in self.data.keys():
-      f = self.training + id + self.TEXT
-      if (os.path.exists(f)):
-        os.remove(f)
+    f = self.training + id + self.TEXT
+    if (os.path.exists(f)):
+      os.remove(f)
       f = self.training + id + self.WAV
       if (os.path.exists(f)):
         os.remove(f)
@@ -220,7 +222,7 @@ class ASRModel:
     return id
 
   def UpdateTraining(self):
-    self.LoadTraining()
+    self.GetAllIds()
     self.__WriteFileids()
     self.__WriteTranscriptions()
     self.__WriteCorpus()
@@ -257,7 +259,7 @@ class ASRModel:
     resp = self.__RunCmd(cmd)
     return resp[0]
 
-  def __ReadSentence(self, id):
+  def ReadSentence(self, id):
 
     path = self.root + self.TRAINING + id + self.TEXT
     with open(path, 'r') as f:
@@ -265,44 +267,47 @@ class ASRModel:
       f.close() 
       return sent
 
-  def LoadTraining(self):
+  def GetTrainingSize(self):
+    return len(self.idList)
 
-    self.data = {}
-    path = self.root + self.TRAINING
-    textFiles = [f for f in os.listdir(path) if f.endswith(self.TEXT)]
-    waveFiles = [f for f in os.listdir(path) if f.endswith(self.WAV)]
-    for f in textFiles:
-      id = f.split('.txt')[0]
-      self.data[id] = { 'text': f, 'sent': self.__ReadSentence(id) }
-    for f in waveFiles:
-      id = f.split('.wav')[0]
-      self.data[id]['wave'] = f
+  def GetAllIds(self):
+    path = self.training
+    self.textFiles = [f for f in os.listdir(path) if f.endswith(self.TEXT)]
+    self.waveFiles = [f for f in os.listdir(path) if f.endswith(self.WAV)]
+    self.idList = [self.__GetIdFromFile(f) for f in self.textFiles]
+    return self.idList
  
   def __WriteCorpus(self):
 
     with open(self.corpus, 'w') as f:
-      for id in self.data.keys():
-        sent = self.data[id]['sent']
-        f.write(sent + self.NEWLINE)
-      f.close() 
+      for t in self.textFiles:
+        with open(self.training+t, 'r') as r:
+          f.write(r.read()+self.NEWLINE)
+          r.close()
+      f.close()
 
+  def __GetIdFromFile(self, path):
+    return path[:-4]
+    
   def __WriteTranscriptions(self):
 
     with open(self.trans, 'w') as f:
-      for id in self.data.keys():
-        if ('wave' in self.data[id].keys()):
-          sent = self.data[id]['sent']
+      for w in self.waveFiles:
+        id = self.__GetIdFromFile(w)
+        with open(self.training+id+self.TEXT, 'r') as r:
+          sent = r.read()
           trans = "<s> " + sent + " </s> (" + id + ")"
-          f.write(trans + self.NEWLINE)
+          r.close()
+        f.write(trans + self.NEWLINE)
       f.close() 
 
   def __WriteFileids(self):
 
     with open(self.fileids, 'w') as f:
-      for id in self.data.keys():
+      for w in self.waveFiles:
         # Only wave files are admissible for SPHINX training
-        if ('wave' in self.data[id].keys()):
-          f.write(id + self.NEWLINE)
+        id = self.__GetIdFromFile(w)
+        f.write(id + self.NEWLINE)
       f.close()
 
   def __RunCmd(self, cmd, debug=False):

@@ -57,12 +57,11 @@ def quit(args):
   exit()
 
 def info(args):
-  t.LoadTraining()
   print "SESSION:", t.name
   print "HMM    :", t.model
   print "DICT   :", t.dict
   print "LM     :", t.lm
-  print "ENTRIES:", len(t.data.keys())
+  print "ENTRIES:", t.GetTrainingSize()
 
 def update(args):
   t.UpdateTraining()
@@ -78,44 +77,43 @@ def build(args):
 def load(args):
   global t
   t = ASRModel(options.session, model=args[0])
-  t.LoadTraining()
   print "Model", args[0], "loaded"
 
-def data(args):
-  for i in t.data.keys():
-    print i,":", t.data[i]['sent']
+def data(args, start=0, stop=-1):
+  if (len(args) > 0):
+    start = int(args[0])
+    if (len(args) > 1):
+      stop = int(args[1])
+  ids = t.GetAllIds()
+  for i in ids[start:stop]:
+    print i,":", t.ReadSentence(i)
 
 def rec(args):
   sent = ' '.join(args)
   print "Say:", sent
   info = t.AddUtterance(sent)
   print "Added:", sent, ":", info
-  t.LoadTraining()
 
 def srec(args):
   sent = ' '.join(args)
   print "Say:", sent
   info = t.AutoAddUtterance(sent)
   print "Added:", sent, ":", info
-  t.LoadTraining()
 
 def sreccorpus(args):
   f = args[0]
   info = t.AutoAddCorpus(f)
   print "Added:", f, ":", len(info), "items"
-  t.LoadTraining()
 
 def add(args):
   sent = ' '.join(args)
   info = t.AddSentence(sent)
   print "Added:", sent, ":", info
-  t.LoadTraining()
 
 def addcorpus(args):
   f = args[0]
   info = t.AddCorpus(f)
   print "Added:", f, ":", len(info), "items"
-  t.LoadTraining()
 
 def test(args):
   print t.TestModel()
@@ -149,8 +147,9 @@ def ls(args):
   print "Finished listing models"
 
 def rm(args):
+
   if (args[0] == '*'):
-    args = [''] + t.data.keys()
+    args = [''] + t.GetAllIds()
   for id in args:
     if (t.DeleteEntry(id)):
       print "Successfully deleted", id, "- don't forget to run update"
@@ -176,7 +175,7 @@ def rmm(args):
 def play(args):
 
   if (args[0] == '*'):
-    args = [''] + t.data.keys()
+    args = [''] + t.GetAllIds()
 
   for id in args:
     if (t.PlayEntry(id)):
@@ -189,7 +188,7 @@ def find(args):
   regexp = ' '.join(args)
   res = t.Find(regexp)
   for i in res:
-    print i,":", t.data[i]['sent']
+    print i[0], ":", i[1]
 
 cmdTable = {
  'help': { 'func':help, 'help': "Displays help information on commands" },
