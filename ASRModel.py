@@ -26,6 +26,8 @@ class ASRModel:
   SPHINXTRAIN = "/usr/local/lib/sphinxtrain/"
   SPHINXLIBEXEC = "/usr/local/libexec/sphinxtrain/"
   CMUSPEECHURL = "http://www.speech.cs.cmu.edu/cgi-bin/tools/lmtool/run"
+  LOGIOSTOOLS = "~/Projects/cmusphinx-code-12331-trunk/logios/Tools"
+  DICTCMD = "MakeDict/make_pronunciation.pl"
   TRAINING = "/training/"
   MODEL = "/model/"
   OUTPUT = "/output/"
@@ -312,7 +314,7 @@ class ASRModel:
 
   def __RunCmd(self, cmd, debug=False):
 
-    #print ">>>> Command:", cmd.join(' ')
+    #print ">>>> Command:", ' '.join(cmd)
     if (not debug):
       task = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
       stdout = task.stdout.read()
@@ -397,6 +399,43 @@ class ASRModel:
     self.__RunCmd(cmd, debug=True)
 
   def __BuildDict(self):
+
+    wfreq = self.training + self.name + '.wfreq'
+    cmd = [ 'text2wfreq', '<', self.corpus, '>', wfreq ]
+    #self.__RunCmd(cmd, debug=False)
+    os.system(' '.join(cmd))
+    vocab = self.adapt + self.name + '.vocab'
+    cmd = [ 'wfreq2vocab', '<', wfreq, '>', vocab ]
+    #self.__RunCmd(cmd, debug=False)
+    os.system(' '.join(cmd))
+    cmd = [ "echo '<s>'", '>>', vocab ]
+    os.system(' '.join(cmd))
+    #self.__RunCmd(cmd, debug=False)
+    cmd = [ "echo '</s>'", '>>', vocab ]
+    os.system(' '.join(cmd))
+    #self.__RunCmd(cmd, debug=False)
+    idngram = self.training + self.name + '.idngram'
+    cmd = [ 'text2idngram', '-idngram', idngram, '-vocab', vocab,
+            '<', self.corpus ]
+    os.system(' '.join(cmd))
+    binlm = self.training + self.name + '.binlm'
+    cmd = [ 'idngram2lm', '-idngram', idngram, '-vocab', vocab,
+            '-binary', binlm ]
+    os.system(' '.join(cmd))
+    #self.__RunCmd(cmd, debug=False)
+    cmd = [ 'binlm2arpa', '-binary', binlm, '-arpa', self.adapt + self.name + '.lm' ]
+    os.system(' '.join(cmd))
+    #self.__RunCmd(cmd, debug=False)
+    mkdict = self.LOGIOSTOOLS + '/' + self.DICTCMD
+    cmd = [ mkdict, '-tools', self.LOGIOSTOOLS, '-dictdir', self.adapt,
+            '-words', self.name + '.vocab', '-dict', self.name + '.dic' ]
+    os.system(' '.join(cmd))
+
+    # Setup new directories
+    self.dict = self.adapt + self.name + self.DICT
+    self.lm = self.adapt + self.name + self.LM
+
+  def __BuildDictOnline(self):
 
     # Setup new directories
     self.dict = self.adapt + self.name + self.DICT
