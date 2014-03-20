@@ -28,8 +28,8 @@ class ASR():
     BASE = '/home/liamw/Python/audio/MusicDB/model/88a693a77bb44a1ca402fa61b4bc6dbf/'
     NAME = 'MusicDB'
 
-    def __init__(self, callback, hmm=None, lm=None, dic=None):
-        self.__InitGsr(hmm, lm, dic)
+    def __init__(self, callback, hmm=None, lm=None, dic=None, nBestSize=25):
+        self.__InitGsr(hmm, lm, dic, nBestSize)
         self.Pause()
         self.callback = callback
 
@@ -44,7 +44,7 @@ class ASR():
       self.pipeline.set_state(gst.STATE_PAUSED)
       self.isPlaying = False
 
-    def __InitGsr(self, hmm, lm, dic):
+    def __InitGsr(self, hmm, lm, dic, nBestSize):
         if (hmm is None):
           hmm = self.BASE
         if (lm is None):
@@ -59,17 +59,20 @@ class ASR():
         self.pipeline = gst.parse_launch(pipeline)
         asr = self.pipeline.get_by_name('asr')
         if (os.path.exists(hmm)):
-          asr.set_property('hmm', hmm)
+          asr.set_property('hmm', hmm[:-1])  # FIXME: Bad to truncate here
         if (os.path.exists(lm)):
           asr.set_property('lm', lm)
         if (os.path.exists(dic)):
           asr.set_property('dict', dic)
+        asr.set_property('nbest_size', nBestSize)
         asr.connect('partial_result', self.__AsrPartial)
         asr.connect('result', self.__AsrResult)
         asr.set_property('configured', True)
 
     def __AsrPartial(self, asr, text, uttid):
-        self.callback('partial', text, uttid)
+        nbest = asr.get_property('nbest')
+        self.callback('partial', text, nbest)
 
     def __AsrResult(self, asr, text, uttid):
-        self.callback('result', text, uttid)
+        nbest = asr.get_property('nbest')
+        self.callback('result', text, nbest)

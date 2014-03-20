@@ -19,11 +19,15 @@ PARTICULAR PURPOSE.
 import os, errno, shutil, uuid, subprocess, re, glob
 from SpeechRecord import *
 
+class ASRModelExceptionEnvironmentNotSetup:
+  pass
+
 class ASRModel:
 
   MODELS = "ASRMODELS"
   VOICES = "/usr/share/mbrola/voices/"
   SPHINXTRAIN = "/usr/local/lib/sphinxtrain/"
+  WORDALIGN = "/usr/local/lib/sphinxtrain/scripts/decode/word_align.pl"
   SPHINXLIBEXEC = "/usr/local/libexec/sphinxtrain/"
   CMUSPEECHURL = "http://www.speech.cs.cmu.edu/cgi-bin/tools/lmtool/run"
   LOGIOSTOOLS = "~/Projects/cmusphinx-code-12331-trunk/logios/Tools"
@@ -52,6 +56,7 @@ class ASRModel:
     self.name = name
     self.cwd = os.getcwd()
     self.models = os.getenv(self.MODELS)
+    if (not self.models): raise ASRModelExceptionEnvironmentNotSetup
     if (self.models[-1] != '/'): self.models += '/'
     self.root = self.models + self.name
     self.training = self.root + self.TRAINING
@@ -72,6 +77,8 @@ class ASRModel:
     self.lm = self.model + self.name + self.LM
     # Load all IDs from training data
     self.GetAllIds()
+    # Make sure corpus file exists if not already created
+    with open(self.corpus, 'a') as f: f.close()
 
   def __chdir(self, path):
     try:
@@ -131,6 +138,49 @@ class ASRModel:
       return True
     return False
 
+  def FindSubstring(self, text):
+
+    k = 0
+    hits = []
+    with open(self.corpus, 'r') as f:
+      for line in f:
+        res = text in line
+        if (res):
+          hits.append((k, line.strip()))
+        k += 1
+    return hits
+
+  def FindContainsOrderedWords(self, text):
+
+    k = 0
+    hits = []
+    words = text.split(' ')
+    with open(self.corpus, 'r') as f:
+      for line in f:
+        nextpos = 0
+        for w in words:
+          pos = line[nextpos:].find(w)
+          if (pos >= 0):
+            nextpos += len(w)
+          else:
+            break
+        if (pos >= 0):
+          hits.append((k, line.strip()))
+          k += 1
+    return hits
+
+  def FindStartsWith(self, text):
+
+    k = 0
+    hits = []
+    with open(self.corpus, 'r') as f:
+      for line in f:
+        res = line.startswith(text)
+        if (res):
+          hits.append((k, line.strip()))
+        k += 1
+    return hits
+
   def Find(self, regexp):
 
     k = 0
@@ -139,10 +189,12 @@ class ASRModel:
       for line in f:
         res = re.findall(regexp, line)
         if (res):
-          id = self.__GetIdFromFile(self.textFiles[k])
-          hits.append((id, line.strip()))
+          hits.append((k, line.strip()))
         k += 1
     return hits
+
+  def DeleteCorpus(self):
+    with open(self.corpus, 'w') as f: f.close()
 
   def DeleteModel(self, id):
 
@@ -179,19 +231,27 @@ class ASRModel:
     cmd = ['mbrola', mbvoice, pho, path ]
     self.__RunCmd(cmd, debug=True)
 
-  def AutoAddCorpus(self, path):
+  def AutoAddUtterancesFile(self, path, numEntries=None):
     new = []
+    k = 0
     with open(path, 'r') as f:
       for line in f:
+        if (numEntries is not None and k == numEntries): break
         new.append(self.AutoAddUtterance(line.strip()))
+        k += 1
       f.close()
     return new
 
-  def AddCorpus(self, path):
+  def AddUtterancesFile(self, path, numEntries=None):
     new = []
+    k = 0
     with open(path, 'r') as f:
       for line in f:
-        new.append(self.AddSentence(line.strip()))
+        if (numEntries is not None and k == numEntries): break
+        u = self.AddUtterance(line.strip())
+        if (u is not None):
+          new.append(u)
+        k += 1
       f.close()
     return new
 
@@ -204,19 +264,24 @@ class ASRModel:
 
   def AddUtterance(self, sent):
 
-    id = self.AddSentence(sent)
-    path = self.root + self.TRAINING + id + self.WAV
     sr = SpeechRecord(rate=self.RATE)
     sr.StartRecord()
+    print "**** Recording:", sent
     sr.WaitRecordComplete()
-    sr.WriteFileAndClose(path)
     info = sr.GetRecordingInfo()
-    sr.Exit()
-    return (info, id)
+    if (info[0] > 0):     # Only save the file if it has data
+      id = self.AddSentence(sent)
+      path = self.root + self.TRAINING + id + self.WAV
+      sr.WriteFileAndClose(path)
+      sr.Exit()
+      return (info, id)
+    print "**** No sound detected!"
+    return None
 
-  def AddSentence(self, sent):
+  def AddSentence(self, sent, id=None):
 
-    id = self.__RandName()
+    if (id is None):
+      id = self.__RandName()
     path = self.root + self.TRAINING + id + self.TEXT
     with open(path, 'w') as f:
       f.write(sent.upper())
@@ -227,7 +292,6 @@ class ASRModel:
     self.GetAllIds()
     self.__WriteFileids()
     self.__WriteTranscriptions()
-    self.__WriteCorpus()
 
   def BuildModel(self, name=None):
     self.__MakeAdaptDir(name)
@@ -257,7 +321,7 @@ class ASRModel:
             '-lm', self.lm, '-dict', self.dict, '-hmm', self.model,
             '-hyp', hyp ]
     self.__RunCmd(cmd, debug=True)
-    cmd = [ './word_align.pl', self.trans, hyp ] 
+    cmd = [ self.WORDALIGN, self.trans, hyp ] 
     resp = self.__RunCmd(cmd)
     return resp[0]
 
@@ -272,21 +336,38 @@ class ASRModel:
   def GetTrainingSize(self):
     return len(self.idList)
 
+  def GetCorpusSize(self):
+    k = 0 
+    with open(self.corpus, 'r') as f:
+      for line in f:
+        k = k + 1
+    return k
+
   def GetAllIds(self):
+
     path = self.training
     self.textFiles = [f for f in os.listdir(path) if f.endswith(self.TEXT)]
     self.waveFiles = [f for f in os.listdir(path) if f.endswith(self.WAV)]
     self.idList = [self.__GetIdFromFile(f) for f in self.textFiles]
     return self.idList
  
-  def __WriteCorpus(self):
+  def AddCorpus(self, sent):
 
-    with open(self.corpus, 'w') as f:
-      for t in self.textFiles:
-        with open(self.training+t, 'r') as r:
-          f.write(r.read()+self.NEWLINE)
-          r.close()
+    with open(self.corpus, 'a') as f:
+      f.write(sent.upper()+self.NEWLINE)
       f.close()
+
+  def AddFileToCorpus(self, path):
+
+    k = 0
+    with open(self.corpus, 'a') as f:
+      with open(path, 'r') as r:
+        for line in r:
+          k += 1
+          f.write(line.upper())
+        r.close()
+      f.close()
+    return k
 
   def __GetIdFromFile(self, path):
     return path[:-4]
@@ -400,6 +481,7 @@ class ASRModel:
 
   def __BuildDict(self):
 
+    nval = 3    # Only 3-gram model is supported at the moment
     wfreq = self.training + self.name + '.wfreq'
     cmd = [ 'text2wfreq', '<', self.corpus, '>', wfreq ]
     #self.__RunCmd(cmd, debug=False)
@@ -415,11 +497,11 @@ class ASRModel:
     os.system(' '.join(cmd))
     #self.__RunCmd(cmd, debug=False)
     idngram = self.training + self.name + '.idngram'
-    cmd = [ 'text2idngram', '-idngram', idngram, '-vocab', vocab,
+    cmd = [ 'text2idngram', '-n', str(nval), '-idngram', idngram, '-vocab', vocab,
             '<', self.corpus ]
     os.system(' '.join(cmd))
     binlm = self.training + self.name + '.binlm'
-    cmd = [ 'idngram2lm', '-idngram', idngram, '-vocab', vocab,
+    cmd = [ 'idngram2lm', '-n', str(nval), '-idngram', idngram, '-vocab', vocab,
             '-binary', binlm ]
     os.system(' '.join(cmd))
     #self.__RunCmd(cmd, debug=False)

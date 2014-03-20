@@ -44,9 +44,10 @@ t = ASRModel(options.session, model=options.model)
 asr = None
 
 # ASR
-def AsrCallback(event, text, uttid):
+def AsrCallback(event, text, nbest):
   if (event == 'result'):
     print "<"+text+">"
+    print "N-best:", nbest
 
 def help(args):
   for i in cmdTable.keys():
@@ -61,7 +62,8 @@ def info(args):
   print "HMM    :", t.model
   print "DICT   :", t.dict
   print "LM     :", t.lm
-  print "ENTRIES:", t.GetTrainingSize()
+  print "TRAINING ENTRIES:", t.GetTrainingSize()
+  print "CORPUS ENTRIES:", t.GetCorpusSize()
 
 def update(args):
   t.UpdateTraining()
@@ -79,7 +81,7 @@ def load(args):
   t = ASRModel(options.session, model=args[0])
   print "Model", args[0], "loaded"
 
-def data(args, start=0, stop=-1):
+def training(args, start=0, stop=-1):
   if (len(args) > 0):
     start = int(args[0])
     if (len(args) > 1):
@@ -90,9 +92,9 @@ def data(args, start=0, stop=-1):
 
 def rec(args):
   sent = ' '.join(args)
-  print "Say:", sent
   info = t.AddUtterance(sent)
-  print "Added:", sent, ":", info
+  if (info is not None):
+    print "Added:", sent, ":", info
 
 def srec(args):
   sent = ' '.join(args)
@@ -100,20 +102,33 @@ def srec(args):
   info = t.AutoAddUtterance(sent)
   print "Added:", sent, ":", info
 
-def sreccorpus(args):
+def srecfile(args):
   f = args[0]
-  info = t.AutoAddCorpus(f)
+  if (len(args) > 1):
+    maxEntries = int(args[1])
+  else:
+    maxEntries = None
+  info = t.AutoAddUtterancesFile(f, maxEntries)
   print "Added:", f, ":", len(info), "items"
 
-def add(args):
+def recfile(args):
+  f = args[0]
+  if (len(args) > 1):
+    maxEntries = int(args[1])
+  else:
+    maxEntries = None
+  info = t.AddUtterancesFile(f, maxEntries)
+  print "Added:", f, ":", len(info), "items"
+
+def append(args):
   sent = ' '.join(args)
-  info = t.AddSentence(sent)
-  print "Added:", sent, ":", info
+  info = t.AddCorpus(sent)
+  print "Added:", sent
 
-def addcorpus(args):
+def appendfile(args):
   f = args[0]
-  info = t.AddCorpus(f)
-  print "Added:", f, ":", len(info), "items"
+  info = t.AddFileToCorpus(f)
+  print "Added:", f, ":", info, "items"
 
 def test(args):
   print t.TestModel()
@@ -157,6 +172,10 @@ def rm(args):
       print "Could not delete", id
   t.UpdateTraining()
 
+def rmc(args):
+
+  t.DeleteCorpus()
+
 def rmm(args):
 
   if (len(args) == 0):
@@ -183,7 +202,7 @@ def play(args):
     else:
       print "Entry", id, "has no wave file"
 
-def find(args):
+def search(args):
 
   regexp = ' '.join(args)
   res = t.Find(regexp)
@@ -197,21 +216,23 @@ cmdTable = {
  'info': { 'func':info, 'help': "Display information about current session" },
  'update': { 'func':update, 'help': "Update training information" },
  'build': { 'func':build, 'help': "Build the model" },
- 'load': { 'func':load, 'help': "Load a new mdoel" },
- 'data': { 'func':data, 'help': "Load and display training data" },
- 'rec': { 'func':rec, 'help': "Record new utterance" },
+ 'load': { 'func':load, 'help': "Load a new model" },
+ 'training': { 'func':training, 'help': "Load and display training data" },
+ 'rec': { 'func':rec, 'help': "Record new training utterance" },
  'srec': { 'func':srec, 'help': "Automatic synth-record a new utterance" },
- 'sreccorpus': { 'func':sreccorpus, 'help': "Automatic synth-record a corpus" },
- 'add': { 'func':add, 'help': "Add new sentence" },
- 'addcorpus': { 'func':addcorpus, 'help': "Add corpus of sentences" },
+ 'srecfile': { 'func':srecfile, 'help': "Automatic synth-record file of utterances" },
+ 'recfile': { 'func':recfile, 'help': "Record a file of utterances" },
+ 'append': { 'func':append, 'help': "Add sentence to corpus" },
+ 'appendfile': { 'func':appendfile, 'help': "Add file to corpus" },
  'test': { 'func':test, 'help': "Test the current model with prepared data" },
  'go': { 'func':go, 'help': "Play or pause ASR instance (toggle)" },
  'stop': { 'func':stop, 'help': "Stop ASR instance" },
- 'play': { 'func':play, 'help': "Play utterance entry" },
- 'find': { 'func':find, 'help': "Find entries using regexp" },
+ 'play': { 'func':play, 'help': "Play training utterance entry" },
+ 'search': { 'func':search, 'help': "Search entire corpus with regexp" },
  'ls': { 'func':ls, 'help': "List available models" },
  'rm': { 'func':rm, 'help': "Delete entry from training database" },
- 'rmm': { 'func':rmm, 'help': "Delete model directory" }
+ 'rmm': { 'func':rmm, 'help': "Delete model directory" },
+ 'rmc': { 'func':rmc, 'help': "Delete all corpus entries" }
 }
 
 def InvokeCommand(text):
