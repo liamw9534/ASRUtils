@@ -44,6 +44,9 @@ class ASR():
       self.pipeline.set_state(gst.STATE_PAUSED)
       self.isPlaying = False
 
+    def Exit(self):
+      self.Pause()
+
     def __InitGsr(self, hmm, lm, dic, nBestSize):
         if (hmm is None):
           hmm = self.BASE
@@ -59,7 +62,7 @@ class ASR():
         self.pipeline = gst.parse_launch(pipeline)
         asr = self.pipeline.get_by_name('asr')
         if (os.path.exists(hmm)):
-          asr.set_property('hmm', hmm[:-1])  # FIXME: Bad to truncate here
+          asr.set_property('hmm', hmm[:-1]) # FIXME: Remove trailing '/'
         if (os.path.exists(lm)):
           asr.set_property('lm', lm)
         if (os.path.exists(dic)):
