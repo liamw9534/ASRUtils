@@ -20,6 +20,7 @@ import threading
 import os
 import sys
 import subprocess
+import json
 
 class ASRGoogleAPI(threading.Thread):
 
@@ -78,13 +79,13 @@ class ASRGoogleAPI(threading.Thread):
     task.wait()
 
     stdout = stdout.strip()
-    print "Got transaction response:", stdout
+    #print "Got transaction response:", stdout
     #print "Got transaction error:", stderr
 
     try:
       if (len(stdout) > 0 and stdout[0] == '{' and stdout[-1] == '}'):
-        resp = eval(stdout)
-        #print "Eval:", resp
+        resp = json.loads(stdout)
+        #print "JSON:", resp
         if ('status' in resp.keys() and resp['status'] == 0):
             if ('hypotheses' in resp.keys() and len(resp['hypotheses']) > 0):
               return [resp['hypotheses'][i]['utterance'].upper() for i in range(0,len(resp['hypotheses']))]
