@@ -28,10 +28,13 @@ class ASR():
     BASE = '/home/liamw/Python/audio/MusicDB/model/88a693a77bb44a1ca402fa61b4bc6dbf/'
     NAME = 'MusicDB'
 
-    def __init__(self, callback, hmm=None, lm=None, dic=None, nBestSize=25):
-        self.__InitGsr(hmm, lm, dic, nBestSize)
+    def __init__(self, callback, hmm=None, lm=None, dic=None, nBestSize=0,
+                 latdir=None, fsg=None, tag='cmu', wordLimit=2):
+        self.__InitGsr(hmm, lm, dic, nBestSize, latdir, fsg)
         self.Pause()
         self.callback = callback
+        self.tag = tag
+        self.wordLimit = wordLimit
 
     def IsPlaying(self):
       return self.isPlaying
@@ -44,10 +47,13 @@ class ASR():
       self.pipeline.set_state(gst.STATE_PAUSED)
       self.isPlaying = False
 
+    def Flush(self):
+      pass
+
     def Exit(self):
       self.Pause()
 
-    def __InitGsr(self, hmm, lm, dic, nBestSize):
+    def __InitGsr(self, hmm, lm, dic, nBestSize, latdir, fsg):
         if (hmm is None):
           hmm = self.BASE
         if (lm is None):
@@ -63,19 +69,30 @@ class ASR():
         asr = self.pipeline.get_by_name('asr')
         if (os.path.exists(hmm)):
           asr.set_property('hmm', hmm[:-1]) # FIXME: Remove trailing '/'
-        if (os.path.exists(lm)):
+        if (not fsg and os.path.exists(lm)):
           asr.set_property('lm', lm)
         if (os.path.exists(dic)):
           asr.set_property('dict', dic)
-        asr.set_property('nbest_size', nBestSize)
+        if (latdir and os.path.exists(latdir)):
+          asr.set_property('latdir', latdir)
+        if (fsg):
+          asr.set_property('fsg', fsg)
+        self.nBestSize = nBestSize
+        if (nBestSize > 0):
+          asr.set_property('nbest_size', nBestSize)
         asr.connect('partial_result', self.__AsrPartial)
         asr.connect('result', self.__AsrResult)
         asr.set_property('configured', True)
 
     def __AsrPartial(self, asr, text, uttid):
+        items = [text]
         nbest = asr.get_property('nbest')
-        self.callback('partial', text, nbest)
+        if (self.nBestSize > 0): items += nbest
+        self.callback('partial', self.tag, items)
 
     def __AsrResult(self, asr, text, uttid):
+        items = [text]
         nbest = asr.get_property('nbest')
-        self.callback('result', text, nbest)
+        if (self.nBestSize > 0): items += nbest
+        if (len(text.split(' ')) <= self.wordLimit):
+          self.callback('result', self.tag, items)

@@ -483,6 +483,7 @@ class ASRModel:
 
     nval = 3    # Only 3-gram model is supported at the moment
     wfreq = self.training + self.name + '.wfreq'
+    context = self.training + self.name + '.ccs'
     cmd = [ 'text2wfreq', '<', self.corpus, '>', wfreq ]
     #self.__RunCmd(cmd, debug=False)
     os.system(' '.join(cmd))
@@ -500,7 +501,12 @@ class ASRModel:
     cmd = [ 'text2idngram', '-n', str(nval), '-idngram', idngram, '-vocab', vocab,
             '<', self.corpus ]
     os.system(' '.join(cmd))
+#    cmd = [ "echo '<S>'", '>', context ]
+#    os.system(' '.join(cmd))
+#    cmd = [ "echo '</S>'", '>>', context ]
+#    os.system(' '.join(cmd))
     binlm = self.training + self.name + '.binlm'
+#    cmd = [ 'idngram2lm', '-context', context, '-n', str(nval), '-idngram', idngram, '-vocab', vocab,
     cmd = [ 'idngram2lm', '-n', str(nval), '-idngram', idngram, '-vocab', vocab,
             '-binary', binlm ]
     os.system(' '.join(cmd))

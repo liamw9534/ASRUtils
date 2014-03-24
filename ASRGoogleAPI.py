@@ -18,38 +18,46 @@ PARTICULAR PURPOSE.
 from SpeechRecord import SpeechRecord
 import threading
 import os
+import sys
 import subprocess
 
 class ASRGoogleAPI(threading.Thread):
 
   MAXRECTIME = 15
 
-  def __init__(self, callback, timeout=2):
+  def __init__(self, callback, timeout=2, tag='google'):
     self.queue = []
     self.event = threading.Event()
     self.stop = False
     self.isPlaying = False
     self.counter = 0
+    self.pending = 0
+    self.flushRequest = False
     self.timeout = timeout
     self.callback = callback
+    self.tag = tag
     self.rec = SpeechRecord(rate=16000, callback=self.__RecordingComplete)
     threading.Thread.__init__(self)
     self.start()
 
   def __StartNewRecording(self):
+    self.pending += 1
     self.rec.StartRecord(maxSeconds=self.MAXRECTIME,
                          timeout=self.timeout,
-                         initTimeout=5)
+                         initTimeout=3)
  
   def __RecordingComplete(self):
+    self.pending -= 1
     info = self.rec.GetRecordingInfo()
     #print "* Recording complete:", info[0], "frames"
-    if (info[0] > 0):
+    if (info[0] > 0 and not self.flushRequest):
       filename = "__ASRGoogleAPI__" + str(self.counter) + ".flac"
       self.rec.WriteFileAndClose(filename)
       self.counter += 1
       self.__Enqueue(filename)
       self.event.set()
+    if (self.pending == 0):
+      self.flushRequest = False
     if (self.IsPlaying()):
       self.__StartNewRecording()
 
@@ -70,19 +78,20 @@ class ASRGoogleAPI(threading.Thread):
     task.wait()
 
     stdout = stdout.strip()
-    #print "Got transaction response:", stdout
+    print "Got transaction response:", stdout
     #print "Got transaction error:", stderr
 
-    if (len(stdout) > 0 and stdout[0] == '{' and stdout[-1] == '}'):
-      resp = eval(stdout)
-      #print "Eval:", resp
-      if ('status' in resp.keys() and resp['status'] == 0):
-        try:
-          if ('hypotheses' in resp.keys() and len(resp['hypotheses']) > 0):
-            return resp['hypotheses'][0]['utterance']
-        except:
-          print "Something bad happened:", resp['hypotheses'], type(resp['hypotheses'])
-          pass
+    try:
+      if (len(stdout) > 0 and stdout[0] == '{' and stdout[-1] == '}'):
+        resp = eval(stdout)
+        #print "Eval:", resp
+        if ('status' in resp.keys() and resp['status'] == 0):
+            if ('hypotheses' in resp.keys() and len(resp['hypotheses']) > 0):
+              return [resp['hypotheses'][i]['utterance'].upper() for i in range(0,len(resp['hypotheses']))]
+    except:
+      print "Was not able to process API response:", sys.exc_info()[0]
+      pass
+
     return None
 
   def __Enqueue(self, filename):
@@ -99,26 +108,25 @@ class ASRGoogleAPI(threading.Thread):
   def __Remove(self, filename):
     os.remove(filename)
 
-  def __Flush(self):
-    while (True):
-      k = self.__Dequeue()
-      if (k):
-        self.__Remove(k)
-      else:
-        break
+  def Flush(self):
+    self.flushRequest = True
 
   def run(self):
     while (not self.stop):
       self.event.wait()
       self.event.clear()
       #print "* Woken up to check the queue"
-      filename = self.__Dequeue()
-      #print "* Got the following:", filename
-      if (filename and self.IsPlaying()):
-        resp = self.__GoogleAPITransaction(filename)
-        self.__Remove(filename)
-        if (resp and self.callback):
-          self.callback('result', resp, None)
+      while (True):
+        filename = self.__Dequeue()
+        #print "* Got the following:", filename
+        if (filename):
+          if (self.isPlaying and not self.flushRequest):
+            resp = self.__GoogleAPITransaction(filename)
+            if (resp and self.callback):
+              self.callback('result', self.tag, resp)
+          self.__Remove(filename)
+        else:
+          break
  
   def IsPlaying(self):
     return self.isPlaying
@@ -132,8 +140,9 @@ class ASRGoogleAPI(threading.Thread):
     self.isPlaying = False
 
   def Exit(self):
+    self.Flush()
     self.Pause()
-    self.__Flush()
     self.stop = True
     self.event.set()
+    self.join()
 

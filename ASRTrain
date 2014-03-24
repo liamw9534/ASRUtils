@@ -135,8 +135,12 @@ def test(args):
 
 def go(args):
   global asr
+  if (len(args) > 0):
+    fsg = args[0]
+  else:
+    fsg = None
   if (asr is None):
-      asr = ASR(AsrCallback, hmm=t.model, lm=t.lm, dic=t.dict)
+      asr = ASR(AsrCallback, hmm=t.model, lm=t.lm, dic=t.dict, fsg=fsg)
       asr.Play()
       print "ASR is now playing"
   else:
