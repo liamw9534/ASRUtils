@@ -21,6 +21,7 @@ import os
 import sys
 import subprocess
 import json
+import requests
 
 class ASRGoogleAPI(threading.Thread):
 
@@ -43,12 +44,14 @@ class ASRGoogleAPI(threading.Thread):
 
   def __StartNewRecording(self):
     self.pending += 1
+    #print "Started new recording. Pending:", self.pending
     self.rec.StartRecord(maxSeconds=self.MAXRECTIME,
                          timeout=self.timeout,
-                         initTimeout=3)
+                         initTimeout=0.5)
  
   def __RecordingComplete(self):
     self.pending -= 1
+    #print "Recording complete. Pending:", self.pending, "Flush:", self.flushRequest
     info = self.rec.GetRecordingInfo()
     #print "* Recording complete:", info[0], "frames"
     if (info[0] > 0 and not self.flushRequest):
@@ -64,34 +67,22 @@ class ASRGoogleAPI(threading.Thread):
 
   def __GoogleAPITransaction(self, filename):
 
-    #print "Running transaction with:", filename
-
     url = 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-QA&maxresults=10'
-    cmd = ['curl', '-XPOST', url, '--data-binary', '@'+filename,
-           '--user-agent', "'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/535.7 (KHTML, like Gecko) Chrome/16.0.912.77 Safari/535.7'",
-           '--header', 'Content-Type: audio/x-flac; rate=16000;' ]
-
-    #print "Running command:", ' '.join(cmd)
-
-    task = subprocess.Popen(cmd, stderr=subprocess.PIPE, stdout=subprocess.PIPE)
-    stdout = task.stdout.read()
-    stderr = task.stderr.read()
-    task.wait()
-
-    stdout = stdout.strip()
-    #print "Got transaction response:", stdout
-    #print "Got transaction error:", stderr
+    headers = { 'Content-Type': 'audio/x-flac; rate=16000;' }
+    fd = open(filename, 'r')
+    files = { 'file': (filename, fd) }
+    r = requests.post(url, files=files, headers=headers)
+    fd.close()
+    text = r.text
 
     try:
-      if (len(stdout) > 0 and stdout[0] == '{' and stdout[-1] == '}'):
-        resp = json.loads(stdout)
-        #print "JSON:", resp
-        if ('status' in resp.keys() and resp['status'] == 0):
-            if ('hypotheses' in resp.keys() and len(resp['hypotheses']) > 0):
-              return [resp['hypotheses'][i]['utterance'].upper() for i in range(0,len(resp['hypotheses']))]
+      resp = json.loads(text)
+      if ('status' in resp.keys() and resp['status'] == 0):
+        if ('hypotheses' in resp.keys() and len(resp['hypotheses']) > 0):
+          return [resp['hypotheses'][i]['utterance'].upper() for i in range(0,len(resp['hypotheses']))]
     except:
       print "Was not able to process API response:", sys.exc_info()[0]
-      pass
+      print "Raw text for debug:", text
 
     return None
 
