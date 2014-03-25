@@ -101,7 +101,7 @@ class SpeechRecord:
       self.__RecordChunk()
       rms = CalcRmsPower(self.parent.frames[-1:])
       #print "**** Ambient noise: ", rms
-      minRmsThreshold = rms * 4
+      minRmsThreshold = rms * 8
       self.parent.frames = []
 
       # Power detector
@@ -119,7 +119,7 @@ class SpeechRecord:
             #print "Truncated back", k, "frames"
             self.parent.frames = self.parent.frames[-k:]
           recording = True
-          print "**** Output detected:", rms
+          #print "**** Output detected:", rms
           break
 
       # Record until quiescent or stop request
