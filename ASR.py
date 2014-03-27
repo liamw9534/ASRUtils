@@ -29,29 +29,32 @@ class ASR():
     NAME = 'MusicDB'
 
     def __init__(self, callback, hmm=None, lm=None, dic=None, nBestSize=0,
-                 latdir=None, fsg=None, tag='cmu', wordLimit=2):
-        self.__InitGsr(hmm, lm, dic, nBestSize, latdir, fsg)
-        self.Pause()
+                 latdir=None, fsg=None, tag='cmu', wordLimit=9999, minProb=-5000):
+        self.isPlaying = False
         self.callback = callback
         self.tag = tag
         self.wordLimit = wordLimit
+        self.minProb = minProb
+        self.asr = self.__InitGsr(hmm, lm, dic, nBestSize, latdir, fsg)
 
     def IsPlaying(self):
       return self.isPlaying
 
     def Play(self):
-      self.pipeline.set_state(gst.STATE_PLAYING)
-      self.isPlaying = True
+      if (self.isPlaying is False):
+        self.pipeline.set_state(gst.STATE_PLAYING)
+        self.isPlaying = True
 
     def Pause(self):
-      self.pipeline.set_state(gst.STATE_PAUSED)
-      self.isPlaying = False
+      if (self.isPlaying):
+        self.pipeline.set_state(gst.STATE_PAUSED)
+        self.isPlaying = False
 
     def Flush(self):
       pass
 
     def Exit(self):
-      self.Pause()
+      self.asr = None
 
     def __InitGsr(self, hmm, lm, dic, nBestSize, latdir, fsg):
         if (hmm is None):
@@ -83,6 +86,7 @@ class ASR():
         asr.connect('partial_result', self.__AsrPartial)
         asr.connect('result', self.__AsrResult)
         asr.set_property('configured', True)
+        return asr
 
     def __AsrPartial(self, asr, text, uttid):
         items = [text]
@@ -90,9 +94,11 @@ class ASR():
         if (self.nBestSize > 0): items += nbest
         self.callback('partial', self.tag, items)
 
-    def __AsrResult(self, asr, text, uttid):
+    def __AsrResult(self, asr, text, uttid, prob, score):
         items = [text]
+        #print "Prob:", prob, "Score:", score, "=>", text
         nbest = asr.get_property('nbest')
         if (self.nBestSize > 0): items += nbest
-        if (len(text.split(' ')) <= self.wordLimit):
+        # Reject anything that is not within word count and probability limits
+        if (len(text.split(' ')) <= self.wordLimit and prob >= self.minProb):
           self.callback('result', self.tag, items)
