@@ -101,7 +101,7 @@ class SpeechRecord:
       self.__RecordChunk()
       rms = CalcRmsPower(self.parent.frames[-1:])
       #print "**** Ambient noise: ", rms
-      minRmsThreshold = rms * 8
+      minRmsThreshold = rms * 5
       self.parent.frames = []
 
       # Power detector
