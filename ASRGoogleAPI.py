@@ -3,7 +3,7 @@ ASRGoogleAPI
 
 An ASR instance wrapper built around Google Speech Recognition API.
 
-Dependencies: ..
+Dependencies: SpeechRecord
 
 Copyright (c) 2014 All Right Reserved, Liam Wickins
 
@@ -25,50 +25,52 @@ import requests
 
 class ASRGoogleAPI(threading.Thread):
 
-  MAXRECTIME = 15
+  MAXRECTIME = 15          # 15s is the max. permitted duration by Google
+  RATE = 16000             # 16KHz is only rate supported by Google
+  INITIALTIMEOUT = 10      # How long to wait before aborting start
+  DEFAULTTIMEOUT = 2       # How long to wait before aborting end
+  MINLENGTH = 4            # Minimum number of frames in recording to submit
 
-  def __init__(self, callback, timeout=2, tag='google'):
+  def __init__(self, callback, timeout=DEFAULTTIMEOUT, tag='google'):
     self.queue = []
     self.event = threading.Event()
     self.stop = False
     self.isPlaying = False
     self.counter = 0
-    self.pending = 0
-    self.flushRequest = False
+    self.pending = False
+    self.flushing = False
     self.timeout = timeout
     self.callback = callback
     self.tag = tag
-    self.rec = SpeechRecord(rate=16000, callback=self.__RecordingComplete)
+    self.rec = SpeechRecord(rate=self.RATE, callback=self.__RecordingComplete)
     threading.Thread.__init__(self)
     self.start()
 
   def __StartNewRecording(self):
-    self.pending += 1
-    #print "Started new recording. Pending:", self.pending
+    self.pending = True
+    #print "* Started new recording"
     self.rec.StartRecord(maxSeconds=self.MAXRECTIME,
                          timeout=self.timeout,
-                         initTimeout=0.5)
+                         initTimeout=self.INITIALTIMEOUT)
  
   def __RecordingComplete(self):
-    self.pending -= 1
-    #print "Recording complete. Pending:", self.pending, "Flush:", self.flushRequest
+    self.pending = False
     info = self.rec.GetRecordingInfo()
     #print "* Recording complete:", info[0], "frames"
-    if (info[0] > 0 and not self.flushRequest):
+    if (info[0] >= self.MINLENGTH and self.isPlaying):
       filename = "__ASRGoogleAPI__" + str(self.counter) + ".flac"
       self.rec.WriteFileAndClose(filename)
       self.counter += 1
       self.__Enqueue(filename)
+      #print "* Queued:", filename
       self.event.set()
-    if (self.pending == 0):
-      self.flushRequest = False
-    if (self.IsPlaying()):
+    if (self.isPlaying):
       self.__StartNewRecording()
 
   def __GoogleAPITransaction(self, filename):
 
     url = 'https://www.google.com/speech-api/v1/recognize?client=chromium&lang=en-QA&maxresults=10'
-    headers = { 'Content-Type': 'audio/x-flac; rate=16000;' }
+    headers = { 'Content-Type': 'audio/x-flac; rate='+str(self.RATE)+';' }
     fd = open(filename, 'r')
     files = { 'file': (filename, fd) }
     r = requests.post(url, files=files, headers=headers)
@@ -101,7 +103,7 @@ class ASRGoogleAPI(threading.Thread):
     os.remove(filename)
 
   def Flush(self):
-    self.flushRequest = True
+    self.flushing = True
 
   def run(self):
     while (not self.stop):
@@ -112,19 +114,22 @@ class ASRGoogleAPI(threading.Thread):
         filename = self.__Dequeue()
         #print "* Got the following:", filename
         if (filename):
-          if (self.isPlaying and not self.flushRequest):
+          if (self.isPlaying and not self.flushing):
             resp = self.__GoogleAPITransaction(filename)
             if (resp and self.callback):
               self.callback('result', self.tag, resp)
+          #else:
+            #print "* Ignoring since isPlaying:", self.isPlaying
           self.__Remove(filename)
         else:
+          self.flushing = False
           break
  
   def IsPlaying(self):
     return self.isPlaying
 
   def Play(self):
-    if (not self.isPlaying):
+    if (self.isPlaying is False):
       self.isPlaying = True
       self.__StartNewRecording()
 
@@ -132,7 +137,6 @@ class ASRGoogleAPI(threading.Thread):
     self.isPlaying = False
 
   def Exit(self):
-    self.Flush()
     self.Pause()
     self.stop = True
     self.event.set()
